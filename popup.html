@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Echo360 Downloader</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark">E</div>
+        <div>
+          <h1>Echo360 Downloader</h1>
+          <p id="subtitle">メディアを確認しています</p>
+        </div>
+      </header>
+
+      <section id="empty" class="panel hidden">
+        <h2>まだメディアが見つかりません</h2>
+        <p>Echo360の授業ページで動画を数秒再生してから、もう一度開いてください。</p>
+      </section>
+
+      <section id="content" class="hidden">
+        <div class="notice">
+          映像と音声は別トラックです。同じ品質のファイルを組み合わせてください。
+        </div>
+        <div id="qualities"></div>
+      </section>
+
+      <p id="status" role="status"></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Test and build output
+coverage/
+dist/
+build/
+*.zip
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Chrome extension signing output
+*.crx
+*.pem

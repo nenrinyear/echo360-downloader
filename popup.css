@@ -1,0 +1,109 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #17131f;
+  background: #f7f5fb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 390px;
+  margin: 0;
+  background: linear-gradient(145deg, #fbfaff 0%, #f3effa 100%);
+}
+
+main { padding: 18px; }
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  color: white;
+  background: #6d28d9;
+  box-shadow: 0 7px 18px rgb(109 40 217 / 24%);
+  font-size: 21px;
+  font-weight: 800;
+}
+
+h1, h2, p { margin: 0; }
+h1 { font-size: 16px; line-height: 1.4; }
+h2 { font-size: 14px; }
+header p { margin-top: 2px; color: #71697e; font-size: 12px; }
+
+.panel, .quality-card {
+  padding: 14px;
+  border: 1px solid #e5dff0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 86%);
+  box-shadow: 0 8px 25px rgb(52 35 75 / 6%);
+}
+
+.panel p { margin-top: 7px; color: #71697e; font-size: 12px; line-height: 1.6; }
+
+.notice {
+  margin-bottom: 11px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  color: #5b417d;
+  background: #eee7fa;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.quality-card + .quality-card { margin-top: 10px; }
+
+.quality-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.quality-head span { color: #81778f; font-size: 11px; }
+
+.track-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid #eee9f4;
+}
+
+.track-row strong { display: block; font-size: 12px; }
+.track-row small { color: #81778f; font-size: 10px; }
+
+button {
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 9px;
+  color: white;
+  background: #6d28d9;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+button:hover { background: #5b21b6; }
+button:disabled { cursor: wait; opacity: .55; }
+
+#status {
+  min-height: 16px;
+  margin-top: 10px;
+  color: #5b417d;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hidden { display: none; }

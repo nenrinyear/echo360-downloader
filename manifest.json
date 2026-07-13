@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Echo360 Track Downloader",
+  "version": "0.1.0",
+  "description": "Detects Echo360 lecture media and downloads the authorized video and audio tracks.",
+  "permissions": ["downloads", "storage", "webRequest"],
+  "host_permissions": [
+    "https://echo360.net.au/*",
+    "https://*.echo360.net.au/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Echo360 Downloader",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://echo360.net.au/lesson/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
