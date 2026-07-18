@@ -1,9 +1,13 @@
 {
-  "name": "echo360-track-downloader",
+  "name": "echo360-downloader",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "echo360-merge": "cli/bin/echo360-merge.js"
+  },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test extension/test/*.test.js cli/test/*.test.js",
+    "merge": "node cli/bin/echo360-merge.js"
   }
 }

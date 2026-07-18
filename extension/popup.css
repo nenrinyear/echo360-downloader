@@ -98,6 +98,13 @@ button {
 button:hover { background: #5b21b6; }
 button:disabled { cursor: wait; opacity: .55; }
 
+.bundle-button {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 9px 12px;
+  background: #4c1d95;
+}
+
 #status {
   min-height: 16px;
   margin-top: 10px;

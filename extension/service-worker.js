@@ -61,29 +61,85 @@ function notify(tabId) {
   chrome.runtime.sendMessage({ type: "SESSION_UPDATED", tabId }).catch(() => {});
 }
 
+function lectureDate(pageUrl) {
+  return pageUrl.match(/_(\d{4}-\d{2}-\d{2})T/)?.[1] ?? "undated";
+}
+
+function bundleFolder(session) {
+  return `${sanitizeFilename(session.title)}_${lectureDate(session.pageUrl)}`;
+}
+
+function trackFilename(track) {
+  return track.trackType === "audio"
+    ? `audio-q${track.quality}.mp4`
+    : `source-${track.source}-q${track.quality}.mp4`;
+}
+
+async function startTrackDownload(session, track, folder, saveAs = false) {
+  return chrome.downloads.download({
+    url: track.url,
+    filename: `Echo360/${folder}/${trackFilename(track)}`,
+    saveAs,
+    conflictAction: "overwrite"
+  });
+}
+
+async function downloadMetadata(session, quality, tracks, folder) {
+  const metadata = {
+    schemaVersion: 1,
+    title: session.title,
+    lectureDate: lectureDate(session.pageUrl),
+    quality,
+    createdAt: new Date().toISOString(),
+    sourcePage: session.pageUrl,
+    tracks: tracks.map((track) => ({
+      role: track.trackType === "audio" ? "audio" : `source-${track.source}`,
+      filename: trackFilename(track),
+      size: track.size,
+      etag: track.etag
+    })),
+    outputs: {
+      source1: "source-1-with-audio.mp4",
+      source2: "source-2-with-audio.mp4",
+      combined: "combined.mp4"
+    }
+  };
+  const url = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(metadata, null, 2))}`;
+  return chrome.downloads.download({
+    url,
+    filename: `Echo360/${folder}/echo360.json`,
+    saveAs: false,
+    conflictAction: "overwrite"
+  });
+}
+
+async function handleMediaResponse(details) {
+  if (details.tabId < 0) return;
+  const media = parseMediaUrl(details.url);
+  if (!media || media.kind !== "media") return;
+
+  const headers = headersToObject(details.responseHeaders);
+  const range = parseContentRange(headers["content-range"]);
+  const size = range?.total ?? (Number(headers["content-length"]) || null);
+  const session = await loadSession(details.tabId) ?? getSession(details.tabId);
+  const key = `${media.source}:${media.quality}`;
+  const previous = session.tracks[key];
+
+  session.tracks[key] = {
+    ...previous,
+    ...media,
+    size: size ?? previous?.size ?? null,
+    etag: headers.etag ?? previous?.etag ?? null,
+    lastSeenAt: Date.now()
+  };
+  session.detectedAt = Date.now();
+  await persistSession(session);
+  notify(details.tabId);
+}
+
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
-    if (details.tabId < 0) return;
-    const media = parseMediaUrl(details.url);
-    if (!media || media.kind !== "media") return;
-
-    const headers = headersToObject(details.responseHeaders);
-    const range = parseContentRange(headers["content-range"]);
-    const size = range?.total ?? (Number(headers["content-length"]) || null);
-    const session = getSession(details.tabId);
-    const key = `${media.source}:${media.quality}`;
-    const previous = session.tracks[key];
-
-    session.tracks[key] = {
-      ...previous,
-      ...media,
-      size: size ?? previous?.size ?? null,
-      etag: headers.etag ?? previous?.etag ?? null,
-      lastSeenAt: Date.now()
-    };
-    session.detectedAt = Date.now();
-    persistSession(session).catch(() => {});
-    notify(details.tabId);
+    handleMediaResponse(details).catch(() => {});
   },
   { urls: ["https://content.echo360.net.au/*"], types: ["media", "xmlhttprequest", "other"] },
   ["responseHeaders"]
@@ -116,18 +172,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
-      const suffix = track.trackType === "audio"
-        ? `audio-q${track.quality}`
-        : `source-${track.source}-q${track.quality}`;
-      const filename = `Echo360/${sanitizeFilename(session.title)}_${suffix}.mp4`;
       try {
-        const downloadId = await chrome.downloads.download({
-          url: track.url,
-          filename,
-          saveAs: Boolean(message.saveAs),
-          conflictAction: "uniquify"
-        });
+        const downloadId = await startTrackDownload(
+          session,
+          track,
+          bundleFolder(session),
+          Boolean(message.saveAs)
+        );
         sendResponse({ ok: true, downloadId });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    });
+    return true;
+  }
+
+  if (message?.type === "DOWNLOAD_BUNDLE") {
+    loadSession(message.tabId).then(async (session) => {
+      const quality = Number(message.quality);
+      const tracks = [0, 1, 2].map((source) => session?.tracks?.[`${source}:${quality}`]);
+      if (!session || tracks.some((track) => !track)) {
+        sendResponse({ ok: false, error: "3トラックが揃っていません。動画を数秒再生してください。" });
+        return;
+      }
+
+      const folder = bundleFolder(session);
+      try {
+        const downloadIds = await Promise.all([
+          ...tracks.map((track) => startTrackDownload(session, track, folder)),
+          downloadMetadata(session, quality, tracks, folder)
+        ]);
+        sendResponse({ ok: true, downloadIds, folder: `Echo360/${folder}` });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
