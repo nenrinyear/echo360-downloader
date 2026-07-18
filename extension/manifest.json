@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "102",
   "name": "Echo360 Track Downloader",
   "version": "0.1.0",
   "description": "Detects Echo360 lecture media and downloads the authorized video and audio tracks.",
   "permissions": ["downloads", "storage", "webRequest"],
   "host_permissions": [
     "https://echo360.net.au/*",
-    "https://*.echo360.net.au/*"
+    "https://content.echo360.net.au/*"
   ],
   "background": {
     "service_worker": "service-worker.js",

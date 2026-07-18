@@ -2,6 +2,15 @@
   "name": "echo360-downloader",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "nenrin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nenrinyear/echo360-downloader.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "bin": {
     "echo360-merge": "cli/bin/echo360-merge.js"

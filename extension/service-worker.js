@@ -8,6 +8,17 @@ import {
 const sessions = new Map();
 const storageKey = (tabId) => `session:${tabId}`;
 
+chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }).catch(() => {});
+
+function isLessonUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.origin === "https://echo360.net.au" && url.pathname.startsWith("/lesson/");
+  } catch {
+    return false;
+  }
+}
+
 async function persistSession(session) {
   await chrome.storage.session.set({ [storageKey(session.tabId)]: session });
 }
@@ -46,9 +57,7 @@ function publicSession(session) {
         source: track.source,
         quality: track.quality,
         trackType: track.trackType,
-        size: track.size,
-        etag: track.etag,
-        safeUrl: track.safeUrl
+        size: track.size
       }])
     )
   };
@@ -65,8 +74,12 @@ function lectureDate(pageUrl) {
   return pageUrl.match(/_(\d{4}-\d{2}-\d{2})T/)?.[1] ?? "undated";
 }
 
-function bundleFolder(session) {
-  return `${sanitizeFilename(session.title)}_${lectureDate(session.pageUrl)}`;
+function bundleFolder(session, quality = null, unique = false) {
+  const qualityPart = quality === null ? "" : `_q${quality}`;
+  const uniquePart = unique
+    ? `_${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`
+    : "";
+  return `${sanitizeFilename(session.title)}_${lectureDate(session.pageUrl)}${qualityPart}${uniquePart}`;
 }
 
 function trackFilename(track) {
@@ -80,7 +93,7 @@ async function startTrackDownload(session, track, folder, saveAs = false) {
     url: track.url,
     filename: `Echo360/${folder}/${trackFilename(track)}`,
     saveAs,
-    conflictAction: "overwrite"
+    conflictAction: "uniquify"
   });
 }
 
@@ -91,12 +104,10 @@ async function downloadMetadata(session, quality, tracks, folder) {
     lectureDate: lectureDate(session.pageUrl),
     quality,
     createdAt: new Date().toISOString(),
-    sourcePage: session.pageUrl,
     tracks: tracks.map((track) => ({
       role: track.trackType === "audio" ? "audio" : `source-${track.source}`,
       filename: trackFilename(track),
-      size: track.size,
-      etag: track.etag
+      size: track.size
     })),
     outputs: {
       source1: "source-1-with-audio.mp4",
@@ -109,12 +120,13 @@ async function downloadMetadata(session, quality, tracks, folder) {
     url,
     filename: `Echo360/${folder}/echo360.json`,
     saveAs: false,
-    conflictAction: "overwrite"
+    conflictAction: "uniquify"
   });
 }
 
 async function handleMediaResponse(details) {
   if (details.tabId < 0) return;
+  if (details.initiator !== "https://echo360.net.au") return;
   const media = parseMediaUrl(details.url);
   if (!media || media.kind !== "media") return;
 
@@ -147,9 +159,14 @@ chrome.webRequest.onHeadersReceived.addListener(
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "PAGE_INFO" && sender.tab?.id != null) {
+    if (!isLessonUrl(sender.url) || !isLessonUrl(message.pageUrl)) {
+      sendResponse({ ok: false, error: "許可されていないページです。" });
+      return;
+    }
     const session = getSession(sender.tab.id);
     session.title = sanitizeFilename(message.title);
     session.pageUrl = message.pageUrl;
+    session.documentId = sender.documentId ?? null;
     persistSession(session).then(
       () => sendResponse({ ok: true }),
       (error) => sendResponse({ ok: false, error: error.message })
@@ -166,7 +183,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "DOWNLOAD_TRACK") {
     loadSession(message.tabId).then(async (session) => {
-      const track = session?.tracks?.[message.trackKey];
+      const validKey = typeof message.trackKey === "string" && /^[012]:\d+$/.test(message.trackKey);
+      const track = validKey && session && Object.hasOwn(session.tracks, message.trackKey)
+        ? session.tracks[message.trackKey]
+        : null;
       if (!session || !track) {
         sendResponse({ ok: false, error: "トラックが見つかりません。動画を少し再生してください。" });
         return;
@@ -176,7 +196,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const downloadId = await startTrackDownload(
           session,
           track,
-          bundleFolder(session),
+          bundleFolder(session, track.quality),
           Boolean(message.saveAs)
         );
         sendResponse({ ok: true, downloadId });
@@ -190,13 +210,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "DOWNLOAD_BUNDLE") {
     loadSession(message.tabId).then(async (session) => {
       const quality = Number(message.quality);
-      const tracks = [0, 1, 2].map((source) => session?.tracks?.[`${source}:${quality}`]);
+      if (!Number.isSafeInteger(quality) || quality < 0 || quality > 9) {
+        sendResponse({ ok: false, error: "品質指定が不正です。" });
+        return;
+      }
+      const tracks = [0, 1, 2].map((source) => {
+        const key = `${source}:${quality}`;
+        return session && Object.hasOwn(session.tracks, key) ? session.tracks[key] : null;
+      });
       if (!session || tracks.some((track) => !track)) {
         sendResponse({ ok: false, error: "3トラックが揃っていません。動画を数秒再生してください。" });
         return;
       }
 
-      const folder = bundleFolder(session);
+      const folder = bundleFolder(session, quality, true);
       try {
         const downloadIds = await Promise.all([
           ...tracks.map((track) => startTrackDownload(session, track, folder)),
@@ -214,6 +241,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sessions.delete(message.tabId);
     chrome.action.setBadgeText({ tabId: message.tabId, text: "" });
     chrome.storage.session.remove(storageKey(message.tabId)).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (message?.type === "PAGE_UNLOAD" && sender.tab?.id != null) {
+    loadSession(sender.tab.id).then((session) => {
+      if (sender.documentId && session?.documentId === sender.documentId) {
+        sessions.delete(sender.tab.id);
+        chrome.storage.session.remove(storageKey(sender.tab.id)).catch(() => {});
+        chrome.action.setBadgeText({ tabId: sender.tab.id, text: "" }).catch(() => {});
+      }
       sendResponse({ ok: true });
     });
     return true;

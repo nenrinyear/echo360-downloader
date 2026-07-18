@@ -2,6 +2,9 @@
 
 Echo360 の認証済みメディアを一括保存し、ローカルの FFmpeg で視聴用 MP4 にまとめるツールです。
 
+> [!IMPORTANT]
+> 本ツールはEcho360, Inc.および各教育機関とは無関係の非公式プロジェクトです。閲覧・ダウンロードを許可されたコンテンツにのみ使用し、著作権、所属機関の規則、授業資料の利用条件を守ってください。DRMや認可制御を回避する機能はありません。
+
 ```text
 echo360-downloader/
 ├── extension/   Chrome 拡張機能
@@ -20,7 +23,7 @@ echo360-downloader/
 次のように保存されます。
 
 ```text
-~/Downloads/Echo360/講義名_2026-06-29/
+~/Downloads/Echo360/講義名_2026-06-29_q1_20260718T120000Z/
 ├── echo360.json
 ├── source-1-q1.mp4
 ├── source-2-q1.mp4
@@ -84,6 +87,14 @@ source-2-with-audio.mp4
 - 認証付きメディアURLは拡張機能の非永続セッション領域だけに保持します。
 - `echo360.json` に認証情報やメディアURLは保存しません。
 - Echo360上で閲覧・ダウンロードを許可されたコンテンツにのみ使用してください。
+
+詳細は [PRIVACY.md](PRIVACY.md) と [SECURITY.md](SECURITY.md) を参照してください。
+
+## 依存関係とライセンス
+
+- npm依存パッケージはありません。
+- FFmpegは同梱せず、利用者が別途インストールした実行ファイルを呼び出します。FFmpeg自体のライセンスはビルド構成によりLGPLまたはGPLです。詳細は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+- このリポジトリのコードは [MIT License](LICENSE) で公開します。
 
 ## テスト
 

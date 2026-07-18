@@ -83,7 +83,11 @@ function render(session) {
       const row = document.createElement("div");
       row.className = "track-row";
       const info = document.createElement("div");
-      info.innerHTML = `<strong>${trackName(track)}</strong><small>${formatBytes(track.size)}</small>`;
+      const name = document.createElement("strong");
+      name.textContent = trackName(track);
+      const size = document.createElement("small");
+      size.textContent = formatBytes(track.size);
+      info.append(name, size);
       const button = document.createElement("button");
       button.textContent = "保存";
       button.addEventListener("click", () => download(session.tabId, trackKey, button));

@@ -8,6 +8,10 @@ function sendPageInfo() {
 
 sendPageInfo();
 
+addEventListener("pagehide", () => {
+  chrome.runtime.sendMessage({ type: "PAGE_UNLOAD" }).catch(() => {});
+}, { once: true });
+
 const titleElement = document.querySelector("title");
 if (titleElement) {
   new MutationObserver(sendPageInfo).observe(titleElement, {

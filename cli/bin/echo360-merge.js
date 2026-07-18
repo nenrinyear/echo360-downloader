@@ -30,6 +30,7 @@ function commandExists(command) {
 
 function runFfmpeg(args) {
   const result = spawnSync("ffmpeg", ["-hide_banner", "-stats", ...args], { stdio: "inherit" });
+  if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`ffmpeg が終了コード ${result.status} で失敗しました。`);
 }
 
@@ -40,7 +41,11 @@ function parseArgs(argv) {
     if (arg === "--combined") options.combined = true;
     else if (arg === "--force") options.force = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
-    else if (arg === "--root") options.root = path.resolve(argv[++index]);
+    else if (arg === "--root") {
+      const value = argv[++index];
+      if (!value || value.startsWith("-")) throw new Error("--rootにはパスが必要です。");
+      options.root = path.resolve(value);
+    }
     else if (arg.startsWith("-")) throw new Error(`不明なオプションです: ${arg}`);
     else if (!options.directory) options.directory = path.resolve(arg);
     else throw new Error("講義フォルダは1つだけ指定できます。");
@@ -48,32 +53,54 @@ function parseArgs(argv) {
   return options;
 }
 
-function mux(video, audio, output, force) {
+function safelyCreateOutput(output, force, ffmpegArgs) {
   if (fs.existsSync(output) && !force) {
     console.log(`\nスキップ: ${path.basename(output)} は作成済みです。`);
     return;
   }
+  if (fs.existsSync(output) && fs.lstatSync(output).isSymbolicLink()) {
+    throw new Error(`出力先にsymlinkは使用できません: ${output}`);
+  }
+  const temporary = `${output}.partial-${process.pid}.mp4`;
+  try {
+    fs.rmSync(temporary, { force: true });
+    runFfmpeg([
+      "-n",
+      ...ffmpegArgs,
+      temporary
+    ]);
+    try {
+      fs.renameSync(temporary, output);
+    } catch (error) {
+      const replaceableOnWindows = force && ["EEXIST", "EPERM"].includes(error.code);
+      if (!replaceableOnWindows || !fs.existsSync(output)) throw error;
+      const outputStat = fs.lstatSync(output);
+      if (outputStat.isSymbolicLink() || !outputStat.isFile()) {
+        throw new Error(`安全に置換できない出力先です: ${output}`);
+      }
+      fs.rmSync(output);
+      fs.renameSync(temporary, output);
+    }
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+function mux(video, audio, output, force) {
   console.log(`\n作成: ${path.basename(output)}`);
-  runFfmpeg([
-    force ? "-y" : "-n",
+  safelyCreateOutput(output, force, [
     "-i", video,
     "-i", audio,
     "-map", "0:v:0",
     "-map", "1:a:0",
     "-c", "copy",
-    "-movflags", "+faststart",
-    output
+    "-movflags", "+faststart"
   ]);
 }
 
 function combine(source1, source2, audio, output, force) {
-  if (fs.existsSync(output) && !force) {
-    console.log(`\nスキップ: ${path.basename(output)} は作成済みです。`);
-    return;
-  }
   console.log(`\n作成: ${path.basename(output)} (再エンコード)`);
-  runFfmpeg([
-    force ? "-y" : "-n",
+  safelyCreateOutput(output, force, [
     "-i", source1,
     "-i", source2,
     "-i", audio,
@@ -84,8 +111,7 @@ function combine(source1, source2, audio, output, force) {
     "-preset", "fast",
     "-crf", "20",
     "-c:a", "copy",
-    "-movflags", "+faststart",
-    output
+    "-movflags", "+faststart"
   ]);
 }
 
@@ -105,7 +131,8 @@ try {
   const byRole = Object.fromEntries(tracks.map((track) => [track.role, track.path]));
   const outputs = outputPaths(directory, data);
 
-  console.log(`講義: ${data.title}`);
+  const displayTitle = String(data.title ?? "Echo360 lecture").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  console.log(`講義: ${displayTitle}`);
   console.log(`フォルダ: ${directory}`);
   mux(byRole["source-1"], byRole.audio, outputs.source1, options.force);
   mux(byRole["source-2"], byRole.audio, outputs.source2, options.force);

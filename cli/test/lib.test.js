@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findLatestBundle, readMetadata, validateBundle } from "../lib.js";
+import { findLatestBundle, outputPaths, readMetadata, validateBundle } from "../lib.js";
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo360-cli-"));
@@ -32,5 +32,33 @@ test("rejects an incomplete track", () => {
   fs.writeFileSync(path.join(directory, "audio-q1.mp4"), "a");
   const { data } = readMetadata(directory);
   assert.throws(() => validateBundle(directory, data), /未完了/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects track path traversal", () => {
+  const { root, directory } = fixture();
+  const metadataPath = path.join(directory, "echo360.json");
+  const data = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+  data.tracks[0].filename = "../outside.mp4";
+  fs.writeFileSync(metadataPath, JSON.stringify(data));
+  assert.throws(() => readMetadata(directory), /安全ではありません/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects output path traversal", () => {
+  const { root, directory } = fixture();
+  const { data } = readMetadata(directory);
+  data.outputs = { source1: "../../overwrite.mp4" };
+  assert.throws(() => outputPaths(directory, data), /安全ではありません/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects symlinked input tracks", () => {
+  const { root, directory } = fixture();
+  const audio = path.join(directory, "audio-q1.mp4");
+  fs.rmSync(audio);
+  fs.symlinkSync(path.join(directory, "source-1-q1.mp4"), audio);
+  const { data } = readMetadata(directory);
+  assert.throws(() => validateBundle(directory, data), /通常ファイルではありません/);
   fs.rmSync(root, { recursive: true, force: true });
 });
