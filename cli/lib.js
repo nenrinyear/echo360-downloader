@@ -28,6 +28,22 @@ function assertRegularFile(filePath, label) {
   return stat;
 }
 
+function assertCompletedMp4(filePath, label) {
+  const stat = assertRegularFile(filePath, label);
+  if (stat.size < 12) throw new Error(`作成済み出力がMP4として不正です: ${filePath}`);
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const header = Buffer.alloc(12);
+    fs.readSync(descriptor, header, 0, header.length, 0);
+    if (header.subarray(4, 8).toString("ascii") !== "ftyp") {
+      throw new Error(`作成済み出力がMP4として不正です: ${filePath}`);
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return stat;
+}
+
 export function readMetadata(directory) {
   const metadataPath = path.resolve(directory, "echo360.json");
   if (!fs.existsSync(metadataPath)) throw new Error(`メタデータがありません: ${metadataPath}`);
@@ -67,6 +83,9 @@ export function readMetadata(directory) {
       throw new Error(`${track.role}のファイルサイズが不正です。`);
     }
   }
+  if (new Set(data.tracks.map((track) => track.filename)).size !== data.tracks.length) {
+    throw new Error("メタデータ内で同じ元トラック名が重複しています。");
+  }
   return { data, metadataPath };
 }
 
@@ -89,6 +108,78 @@ export function validateBundle(directory, data) {
     }
     return { ...track, role, path: filePath, actualSize };
   });
+}
+
+function requiredOutputEntries(directory, data) {
+  const outputs = outputPaths(directory, data);
+  const entries = [];
+  if (data.tracks.some((track) => track.role === "source-1")) {
+    entries.push({ role: "source-1", path: outputs.source1 });
+  }
+  if (data.tracks.some((track) => track.role === "source-2")) {
+    entries.push({ role: "source-2", path: outputs.source2 });
+  }
+  return entries;
+}
+
+export function validateCompletedOutputs(directory, data) {
+  const baseDirectory = path.resolve(directory);
+  const sourcePaths = new Set();
+  const sourceIdentities = new Set();
+  for (const track of data.tracks) {
+    const sourcePath = path.resolve(
+      baseDirectory,
+      assertPlainFilename(track.filename, `${track.role}のファイル名`)
+    );
+    sourcePaths.add(sourcePath);
+    if (fs.existsSync(sourcePath)) {
+      const stat = assertRegularFile(sourcePath, `${track.role}トラック`);
+      sourceIdentities.add(`${stat.dev}:${stat.ino}`);
+    }
+  }
+  const entries = requiredOutputEntries(directory, data);
+  if (new Set(entries.map((entry) => entry.path)).size !== entries.length) {
+    throw new Error("複数Sourceの出力先が同じファイルに設定されています。");
+  }
+  for (const entry of entries) {
+    if (sourcePaths.has(entry.path)) {
+      throw new Error(`${entry.role}の出力先が元トラックと同じです: ${entry.path}`);
+    }
+    if (!fs.existsSync(entry.path)) {
+      throw new Error(`作成済みの音声付き出力がありません: ${entry.path}`);
+    }
+    const outputStat = assertCompletedMp4(entry.path, `${entry.role}音声付き出力`);
+    if (sourceIdentities.has(`${outputStat.dev}:${outputStat.ino}`)) {
+      throw new Error(`${entry.role}の出力先が元トラックと同じ実体です: ${entry.path}`);
+    }
+  }
+  return entries;
+}
+
+export function sourceTracksAreDeleted(directory, data) {
+  const baseDirectory = path.resolve(directory);
+  return data.tracks.every((track) => {
+    const filename = assertPlainFilename(track.filename, `${track.role}のファイル名`);
+    return !fs.existsSync(path.resolve(baseDirectory, filename));
+  });
+}
+
+export function cleanupSourceTracks(directory, data) {
+  validateCompletedOutputs(directory, data);
+  const baseDirectory = path.resolve(directory);
+  const deletable = [];
+  for (const track of data.tracks) {
+    const filename = assertPlainFilename(track.filename, `${track.role}のファイル名`);
+    const filePath = path.resolve(baseDirectory, filename);
+    if (!fs.existsSync(filePath)) continue;
+    const actualSize = assertRegularFile(filePath, `${track.role}トラック`).size;
+    if (actualSize !== track.size) {
+      throw new Error(`元トラックのサイズがメタデータと一致しません: ${filename} (${actualSize}/${track.size} bytes)`);
+    }
+    deletable.push({ ...track, path: filePath, actualSize });
+  }
+  for (const track of deletable) fs.rmSync(track.path);
+  return deletable;
 }
 
 export function findLatestBundle(root) {

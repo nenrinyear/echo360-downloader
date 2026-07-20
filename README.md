@@ -89,6 +89,20 @@ Source 1とSource 2の両方がある講義で左右合成版も作る場合は�
 ./cli/bin/echo360-merge.js --latest
 ```
 
+mergeが成功した講義から元の映像・音声トラックを削除するには、`--delete-sources`を指定します。
+
+```sh
+echo360-merge ~/Downloads/Echo360 --delete-sources
+```
+
+すでに音声付きMP4を作成済みで、mergeせず元トラックの削除だけを行う場合は`--cleanup`を使います。このモードではFFmpegは不要です。
+
+```sh
+echo360-merge ~/Downloads/Echo360 --cleanup
+```
+
+どちらのモードも、存在する全Sourceに対応した音声付き出力が有効なMP4ヘッダーを持つ通常ファイルであることと、元トラックが`echo360.json`記載のサイズと一致することを確認してから削除します。`echo360.json`と作成済み出力は残ります。削除した元トラックは復元できません。
+
 ## プライバシー
 
 - 認証CookieやJWTを読み取りません。

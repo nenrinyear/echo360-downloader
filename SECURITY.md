@@ -16,4 +16,5 @@ Use [GitHub private vulnerability reporting](https://github.com/nenrinyear/echo3
 - Section batch processing follows only validated `https://echo360.net.au/lesson/` URLs discovered on an authorized section page and never reads cookies or authorization headers.
 - Authenticated media URLs are held in Chrome's in-memory extension session storage and are not written to `echo360.json`.
 - The CLI treats `echo360.json` as untrusted input, rejects path traversal and symlinks, and writes through temporary files before replacing an output.
+- Source cleanup validates every required non-empty output and every original track before deleting only the exact files named by `echo360.json`; metadata and merged outputs are retained.
 - This project does not bypass DRM or Echo360 authorization controls.

@@ -3,7 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findBundles, findLatestBundle, outputPaths, readMetadata, validateBundle } from "../lib.js";
+import {
+  cleanupSourceTracks,
+  findBundles,
+  findLatestBundle,
+  outputPaths,
+  readMetadata,
+  sourceTracksAreDeleted,
+  validateBundle,
+  validateCompletedOutputs
+} from "../lib.js";
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo360-cli-"));
@@ -17,6 +26,10 @@ function fixture() {
   fs.writeFileSync(path.join(directory, "echo360.json"), JSON.stringify({ schemaVersion: 1, tracks }));
   for (const track of tracks) fs.writeFileSync(path.join(directory, track.filename), "abc");
   return { root, directory };
+}
+
+function completedMp4() {
+  return Buffer.from("000000186674797069736f6d00000000", "hex");
 }
 
 test("finds and validates a downloaded bundle", () => {
@@ -101,5 +114,71 @@ test("rejects symlinked input tracks", () => {
   fs.symlinkSync(path.join(directory, "source-1-q1.mp4"), audio);
   const { data } = readMetadata(directory);
   assert.throws(() => validateBundle(directory, data), /通常ファイルではありません/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("deletes source tracks only after every required output exists", () => {
+  const { root, directory } = fixture();
+  const { data } = readMetadata(directory);
+  const outputs = outputPaths(directory, data);
+  fs.writeFileSync(outputs.source1, completedMp4());
+  fs.writeFileSync(outputs.source2, completedMp4());
+
+  assert.equal(validateCompletedOutputs(directory, data).length, 2);
+  const deleted = cleanupSourceTracks(directory, data);
+  assert.equal(deleted.length, 3);
+  assert.equal(sourceTracksAreDeleted(directory, data), true);
+  assert.equal(fs.existsSync(path.join(directory, "echo360.json")), true);
+  assert.equal(cleanupSourceTracks(directory, data).length, 0);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("does not delete any source track when an output is missing", () => {
+  const { root, directory } = fixture();
+  const { data } = readMetadata(directory);
+  const outputs = outputPaths(directory, data);
+  fs.writeFileSync(outputs.source1, completedMp4());
+
+  assert.throws(() => cleanupSourceTracks(directory, data), /作成済みの音声付き出力がありません/);
+  for (const track of data.tracks) {
+    assert.equal(fs.existsSync(path.join(directory, track.filename)), true);
+  }
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("refuses to treat an original track as a completed output", () => {
+  const { root, directory } = fixture();
+  const { data } = readMetadata(directory);
+  data.outputs = { source1: "source-1-q1.mp4" };
+  assert.throws(() => cleanupSourceTracks(directory, data), /出力先が元トラックと同じ/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("refuses to treat a hard link to an original track as output", () => {
+  const { root, directory } = fixture();
+  const { data } = readMetadata(directory);
+  const outputs = outputPaths(directory, data);
+  fs.rmSync(path.join(directory, "source-1-q1.mp4"));
+  fs.writeFileSync(path.join(directory, "source-1-q1.mp4"), completedMp4());
+  data.tracks.find((track) => track.role === "source-1").size = completedMp4().length;
+  fs.linkSync(path.join(directory, "source-1-q1.mp4"), outputs.source1);
+  fs.writeFileSync(outputs.source2, completedMp4());
+
+  assert.throws(() => cleanupSourceTracks(directory, data), /出力先が元トラックと同じ実体/);
+  assert.equal(fs.existsSync(path.join(directory, "source-1-q1.mp4")), true);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("does not delete sources when an output is not a valid MP4", () => {
+  const { root, directory } = fixture();
+  const { data } = readMetadata(directory);
+  const outputs = outputPaths(directory, data);
+  fs.writeFileSync(outputs.source1, "not-an-mp4-file");
+  fs.writeFileSync(outputs.source2, completedMp4());
+
+  assert.throws(() => cleanupSourceTracks(directory, data), /MP4として不正/);
+  for (const track of data.tracks) {
+    assert.equal(fs.existsSync(path.join(directory, track.filename)), true);
+  }
   fs.rmSync(root, { recursive: true, force: true });
 });

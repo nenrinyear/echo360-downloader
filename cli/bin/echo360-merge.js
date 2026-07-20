@@ -5,10 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import {
+  cleanupSourceTracks,
   findBundles,
   findLatestBundle,
   outputPaths,
   readMetadata,
+  sourceTracksAreDeleted,
+  validateCompletedOutputs,
   validateBundle
 } from "../lib.js";
 
@@ -23,8 +26,13 @@ function usage() {
   --root <path>   自動検索するルートを変更
   --latest        最新の講義だけを処理
   --combined      2映像を左右に並べた動画も作成
+  --delete-sources
+                  merge成功後、元の映像・音声トラックを削除
+  --cleanup       作成済み出力を確認し、元トラックの削除だけを実行
   --force         既存の出力を上書き
-  --help          このヘルプを表示`);
+  --help          このヘルプを表示
+
+削除オプションはecho360.jsonを残します。削除した元トラックは復元できません。`);
 }
 
 function commandExists(command) {
@@ -38,10 +46,20 @@ function runFfmpeg(args) {
 }
 
 function parseArgs(argv) {
-  const options = { combined: false, force: false, latest: false, root: path.join(os.homedir(), "Downloads", "Echo360"), directory: null };
+  const options = {
+    cleanup: false,
+    combined: false,
+    deleteSources: false,
+    force: false,
+    latest: false,
+    root: path.join(os.homedir(), "Downloads", "Echo360"),
+    directory: null
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--combined") options.combined = true;
+    else if (arg === "--cleanup") options.cleanup = true;
+    else if (arg === "--delete-sources") options.deleteSources = true;
     else if (arg === "--force") options.force = true;
     else if (arg === "--latest") options.latest = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
@@ -53,6 +71,9 @@ function parseArgs(argv) {
     else if (arg.startsWith("-")) throw new Error(`不明なオプションです: ${arg}`);
     else if (!options.directory) options.directory = path.resolve(arg);
     else throw new Error("講義フォルダは1つだけ指定できます。");
+  }
+  if (options.cleanup && (options.combined || options.deleteSources || options.force)) {
+    throw new Error("--cleanupは--combined、--delete-sources、--forceと同時に指定できません。");
   }
   return options;
 }
@@ -121,7 +142,15 @@ function combine(source1, source2, audio, output, force) {
 
 function mergeBundle(directory, options) {
   const { data } = readMetadata(directory);
-  const tracks = validateBundle(directory, data);
+  let tracks;
+  try {
+    tracks = validateBundle(directory, data);
+  } catch (error) {
+    if (!sourceTracksAreDeleted(directory, data)) throw error;
+    validateCompletedOutputs(directory, data);
+    console.log(`\nスキップ: 元トラックは削除済みです。\nフォルダ: ${directory}`);
+    return;
+  }
   const byRole = Object.fromEntries(tracks.map((track) => [track.role, track.path]));
   const outputs = outputPaths(directory, data);
 
@@ -135,6 +164,23 @@ function mergeBundle(directory, options) {
   } else if (options.combined) {
     console.log("\nスキップ: 左右合成にはSource 1とSource 2の両方が必要です。");
   }
+  if (options.deleteSources) {
+    const deleted = cleanupSourceTracks(directory, data);
+    console.log(`\n元トラックを削除しました (${deleted.length}ファイル)。`);
+  }
+}
+
+function cleanupBundle(directory) {
+  const { data } = readMetadata(directory);
+  const displayTitle = String(data.title ?? "Echo360 lecture").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  console.log(`\n講義: ${displayTitle}`);
+  console.log(`フォルダ: ${directory}`);
+  const deleted = cleanupSourceTracks(directory, data);
+  if (deleted.length) {
+    console.log(`元トラックを削除しました (${deleted.length}ファイル)。`);
+  } else {
+    console.log("スキップ: 元トラックは削除済みです。");
+  }
 }
 
 try {
@@ -143,7 +189,7 @@ try {
     usage();
     process.exit(0);
   }
-  if (!commandExists("ffmpeg")) {
+  if (!options.cleanup && !commandExists("ffmpeg")) {
     throw new Error("ffmpeg が見つかりません。macOSでは `brew install ffmpeg` で導入できます。");
   }
 
@@ -153,7 +199,8 @@ try {
   console.log(`${directories.length}件の講義フォルダを検出しました。`);
   for (const directory of directories) {
     try {
-      mergeBundle(directory, options);
+      if (options.cleanup) cleanupBundle(directory);
+      else mergeBundle(directory, options);
     } catch (error) {
       failures.push({ directory, message: error.message });
       console.error(`\n失敗: ${directory}\n  ${error.message}`);
