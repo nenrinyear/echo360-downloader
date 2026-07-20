@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   findDownloadableQualities,
+  normalizeDownloadFolder,
   normalizeLessonEntries,
   parseContentRange,
   parseEchoPageUrl,
@@ -39,6 +40,17 @@ test("parses Content-Range", () => {
 
 test("sanitizes download names", () => {
   assert.equal(sanitizeFilename(' Lecture: A/B?  '), "Lecture_ A_B_");
+});
+
+test("normalizes a Downloads-relative custom folder", () => {
+  assert.equal(normalizeDownloadFolder("  授業\\Echo360  "), "授業/Echo360");
+  assert.equal(normalizeDownloadFolder("大学/音響メディア論"), "大学/音響メディア論");
+});
+
+test("rejects unsafe custom download folders", () => {
+  for (const folder of ["", "/tmp/Echo360", "C:/Echo360", "../Echo360", "a//b", "a/./b", "a:name", "CON"]) {
+    assert.throws(() => normalizeDownloadFolder(folder));
+  }
 });
 
 test("classifies Echo360 lesson and section URLs", () => {

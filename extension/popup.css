@@ -50,6 +50,46 @@ header p { margin-top: 2px; color: #71697e; font-size: 12px; }
 
 .panel p { margin-top: 7px; color: #71697e; font-size: 12px; line-height: 1.6; }
 
+.settings-panel { margin-top: 10px; }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.toggle-row input { accent-color: #6d28d9; }
+
+.settings-fields { margin-top: 10px; }
+
+.settings-fields label {
+  display: block;
+  margin-bottom: 5px;
+  color: #71697e;
+  font-size: 11px;
+}
+
+.settings-fields input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8cfe6;
+  border-radius: 9px;
+  background: white;
+  color: #17131f;
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings-fields input:focus {
+  border-color: #7c3aed;
+  outline: 2px solid rgb(124 58 237 / 15%);
+}
+
+.settings-save { margin-top: 10px; }
+
 .notice {
   margin-bottom: 11px;
   padding: 10px 12px;

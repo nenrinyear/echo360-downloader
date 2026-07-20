@@ -2,6 +2,8 @@ const MEDIA_FILE_RE = /^s([012])q(\d+)\.mp4$/i;
 const MASTER_PLAYLIST_RE = /^s([12])_(v|av)\.m3u8$/i;
 const LESSON_PATH_RE = /^\/lesson\/[^/]+(?:\/|$)/;
 const SECTION_PATH_RE = /^\/section\/[^/]+(?:\/home)?\/?$/;
+const INVALID_FOLDER_CHAR_RE = /[<>:"|?*\u0000-\u001f\u007f]/;
+const WINDOWS_RESERVED_NAME_RE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
 export function parseEchoPageUrl(rawUrl) {
   let url;
@@ -124,6 +126,34 @@ export function sanitizeFilename(value) {
     .replace(/[. ]+$/g, "")
     .trim()
     .slice(0, 120) || "Echo360 lecture";
+}
+
+export function normalizeDownloadFolder(value) {
+  if (typeof value !== "string") {
+    throw new TypeError("保存先フォルダを文字列で指定してください。");
+  }
+  const normalized = value.trim().replace(/\\/g, "/");
+  if (!normalized) throw new Error("保存先フォルダを入力してください。");
+  if (normalized.length > 240) throw new Error("保存先フォルダが長すぎます。");
+  if (normalized.startsWith("/") || /^[a-z]:\//i.test(normalized)) {
+    throw new Error("Downloadsからの相対パスを指定してください。");
+  }
+
+  const segments = normalized.split("/");
+  for (const segment of segments) {
+    if (!segment || segment === "." || segment === "..") {
+      throw new Error("保存先フォルダに空の階層や .、.. は使用できません。");
+    }
+    if (
+      segment.length > 120
+      || INVALID_FOLDER_CHAR_RE.test(segment)
+      || /[. ]$/.test(segment)
+      || WINDOWS_RESERVED_NAME_RE.test(segment)
+    ) {
+      throw new Error(`保存先フォルダに使用できない名前があります: ${segment}`);
+    }
+  }
+  return segments.join("/");
 }
 
 export function formatBytes(bytes) {

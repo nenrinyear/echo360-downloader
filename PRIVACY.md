@@ -15,6 +15,8 @@ Authenticated content URLs may contain identifiers and are treated as sensitive.
 
 Section batch state is also stored only in `chrome.storage.session`. The extension opens each listed lesson in the same Chrome profile so that Echo360 applies the user's existing authenticated session and permissions.
 
+The custom download-folder toggle and its Downloads-relative path are stored in `chrome.storage.local` so the preference persists across browser restarts. This setting contains no authentication data.
+
 The generated `echo360.json` contains the lecture title, date, quality, local filenames, expected sizes, and output filenames. It does not contain cookies, JWTs, signed media URLs, ETags, or the source lesson URL.
 
 ## CLI
@@ -23,4 +25,4 @@ The CLI reads local files selected through `echo360.json` and invokes the locall
 
 ## Removal
 
-Uninstalling or reloading the extension clears its session data. Downloaded files can be removed through the operating system like any other local file.
+Uninstalling or reloading the extension clears its session data. Uninstalling the extension also removes its locally stored download-folder preference. Downloaded files can be removed through the operating system like any other local file.

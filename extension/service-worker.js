@@ -1,6 +1,7 @@
 import {
   findDownloadableQualities,
   headersToObject,
+  normalizeDownloadFolder,
   normalizeLessonEntries,
   parseContentRange,
   parseEchoPageUrl,
@@ -11,6 +12,8 @@ import {
 const sessions = new Map();
 const storageKey = (tabId) => `session:${tabId}`;
 const BATCH_STORAGE_KEY = "sectionBatch";
+const DOWNLOAD_SETTINGS_KEY = "downloadSettings";
+const DEFAULT_DOWNLOAD_FOLDER = "Echo360";
 const BATCH_TIMEOUT_MINUTES = 1.5;
 const batchDownloadTabs = new Set();
 const batchSettleTimers = new Map();
@@ -100,16 +103,64 @@ function trackFilename(track) {
     : `source-${track.source}-q${track.quality}.mp4`;
 }
 
-async function startTrackDownload(session, track, folder, saveAs = false) {
+function defaultDownloadSettings() {
+  return {
+    useCustomFolder: false,
+    customFolder: DEFAULT_DOWNLOAD_FOLDER,
+    effectiveFolder: DEFAULT_DOWNLOAD_FOLDER
+  };
+}
+
+function normalizeDownloadSettings(value) {
+  const useCustomFolder = value?.useCustomFolder === true;
+  let customFolder;
+  try {
+    customFolder = normalizeDownloadFolder(value?.customFolder ?? DEFAULT_DOWNLOAD_FOLDER);
+  } catch (error) {
+    if (useCustomFolder) throw error;
+    customFolder = DEFAULT_DOWNLOAD_FOLDER;
+  }
+  return {
+    useCustomFolder,
+    customFolder,
+    effectiveFolder: useCustomFolder ? customFolder : DEFAULT_DOWNLOAD_FOLDER
+  };
+}
+
+async function loadDownloadSettings() {
+  const stored = await chrome.storage.local.get(DOWNLOAD_SETTINGS_KEY);
+  try {
+    return normalizeDownloadSettings(stored[DOWNLOAD_SETTINGS_KEY]);
+  } catch {
+    return defaultDownloadSettings();
+  }
+}
+
+async function saveDownloadSettings(value) {
+  const settings = normalizeDownloadSettings(value);
+  await chrome.storage.local.set({
+    [DOWNLOAD_SETTINGS_KEY]: {
+      useCustomFolder: settings.useCustomFolder,
+      customFolder: settings.customFolder
+    }
+  });
+  return settings;
+}
+
+function downloadFolderPath(baseFolder, folder) {
+  return `${baseFolder}/${folder}`;
+}
+
+async function startTrackDownload(session, track, folder, baseFolder, saveAs = false) {
   return chrome.downloads.download({
     url: track.url,
-    filename: `Echo360/${folder}/${trackFilename(track)}`,
+    filename: `${downloadFolderPath(baseFolder, folder)}/${trackFilename(track)}`,
     saveAs,
     conflictAction: "uniquify"
   });
 }
 
-async function downloadMetadata(session, quality, tracks, folder) {
+async function downloadMetadata(session, quality, tracks, folder, baseFolder) {
   const metadata = {
     schemaVersion: 1,
     title: session.title,
@@ -130,7 +181,7 @@ async function downloadMetadata(session, quality, tracks, folder) {
   const url = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(metadata, null, 2))}`;
   return chrome.downloads.download({
     url,
-    filename: `Echo360/${folder}/echo360.json`,
+    filename: `${downloadFolderPath(baseFolder, folder)}/echo360.json`,
     saveAs: false,
     conflictAction: "uniquify"
   });
@@ -282,11 +333,14 @@ async function maybeDownloadBatch(session, allowSingleVideo = false) {
       .map((source) => session.tracks[`${source}:${quality}`])
       .filter(Boolean);
     const folder = bundleFolder(session, quality, true);
+    const baseFolder = state.downloadFolder
+      ? normalizeDownloadFolder(state.downloadFolder)
+      : (await loadDownloadSettings()).effectiveFolder;
     await Promise.all([
-      ...tracks.map((track) => startTrackDownload(session, track, folder)),
-      downloadMetadata(session, quality, tracks, folder)
+      ...tracks.map((track) => startTrackDownload(session, track, folder, baseFolder)),
+      downloadMetadata(session, quality, tracks, folder, baseFolder)
     ]);
-    await finishCurrentBatchEntry(state, true, "", `Echo360/${folder}`);
+    await finishCurrentBatchEntry(state, true, "", downloadFolderPath(baseFolder, folder));
   } catch (error) {
     await finishCurrentBatchEntry(state, false, error.message);
   } finally {
@@ -303,6 +357,7 @@ async function startSectionBatch(session) {
   if (!session.lessons?.length) {
     throw new Error("授業リンクが見つかりません。一覧が表示されるまで待ってから再試行してください。");
   }
+  const downloadSettings = await loadDownloadSettings();
   const state = {
     id: `${Date.now()}-${session.tabId}`,
     status: "running",
@@ -316,6 +371,7 @@ async function startSectionBatch(session) {
     currentTitle: "",
     currentStage: "",
     lastError: "",
+    downloadFolder: downloadSettings.effectiveFolder,
     results: [],
     startedAt: Date.now()
   };
@@ -425,6 +481,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "GET_DOWNLOAD_SETTINGS") {
+    loadDownloadSettings().then(
+      (settings) => sendResponse({ ok: true, settings }),
+      (error) => sendResponse({ ok: false, error: error.message })
+    );
+    return true;
+  }
+
+  if (message?.type === "SET_DOWNLOAD_SETTINGS") {
+    saveDownloadSettings(message.settings).then(
+      (settings) => sendResponse({ ok: true, settings }),
+      (error) => sendResponse({ ok: false, error: error.message })
+    );
+    return true;
+  }
+
   if (message?.type === "DOWNLOAD_TRACK") {
     loadSession(message.tabId).then(async (session) => {
       const validKey = typeof message.trackKey === "string" && /^[012]:\d+$/.test(message.trackKey);
@@ -437,13 +509,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       try {
+        const settings = await loadDownloadSettings();
         const downloadId = await startTrackDownload(
           session,
           track,
           bundleFolder(session, track.quality),
+          settings.effectiveFolder,
           Boolean(message.saveAs)
         );
-        sendResponse({ ok: true, downloadId });
+        sendResponse({ ok: true, downloadId, folder: settings.effectiveFolder });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
@@ -471,11 +545,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       const folder = bundleFolder(session, quality, true);
       try {
+        const settings = await loadDownloadSettings();
         const downloadIds = await Promise.all([
-          ...tracks.map((track) => startTrackDownload(session, track, folder)),
-          downloadMetadata(session, quality, tracks, folder)
+          ...tracks.map((track) => startTrackDownload(session, track, folder, settings.effectiveFolder)),
+          downloadMetadata(session, quality, tracks, folder, settings.effectiveFolder)
         ]);
-        sendResponse({ ok: true, downloadIds, folder: `Echo360/${folder}` });
+        sendResponse({
+          ok: true,
+          downloadIds,
+          folder: downloadFolderPath(settings.effectiveFolder, folder)
+        });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }

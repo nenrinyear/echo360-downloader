@@ -12,6 +12,18 @@ const batchProgress = document.querySelector("#batch-progress");
 const batchCancel = document.querySelector("#batch-cancel");
 const progressBar = document.querySelector("#progress-bar");
 const progressText = document.querySelector("#progress-text");
+const customFolderEnabled = document.querySelector("#custom-folder-enabled");
+const customFolderFields = document.querySelector("#custom-folder-fields");
+const customFolder = document.querySelector("#custom-folder");
+const saveDownloadSettings = document.querySelector("#save-download-settings");
+const effectiveFolder = document.querySelector("#effective-folder");
+
+function renderDownloadSettings(settings) {
+  customFolderEnabled.checked = settings.useCustomFolder;
+  customFolder.value = settings.customFolder;
+  customFolderFields.classList.toggle("hidden", !settings.useCustomFolder);
+  effectiveFolder.textContent = `保存先: Downloads/${settings.effectiveFolder}`;
+}
 
 function trackName(track) {
   return track.trackType === "audio" ? "音声" : `Source ${track.source} 映像`;
@@ -146,6 +158,32 @@ function renderBatch(batch) {
 }
 
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+customFolderEnabled.addEventListener("change", () => {
+  customFolderFields.classList.toggle("hidden", !customFolderEnabled.checked);
+  if (customFolderEnabled.checked) customFolder.focus();
+});
+
+saveDownloadSettings.addEventListener("click", async () => {
+  saveDownloadSettings.disabled = true;
+  const response = await chrome.runtime.sendMessage({
+    type: "SET_DOWNLOAD_SETTINGS",
+    settings: {
+      useCustomFolder: customFolderEnabled.checked,
+      customFolder: customFolder.value
+    }
+  });
+  saveDownloadSettings.disabled = false;
+  if (response.ok) {
+    renderDownloadSettings(response.settings);
+    status.textContent = `保存先を Downloads/${response.settings.effectiveFolder} に設定しました。`;
+  } else {
+    status.textContent = `保存先を変更できませんでした: ${response.error}`;
+  }
+});
+
+const settingsResponse = await chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_SETTINGS" });
+if (settingsResponse.ok) renderDownloadSettings(settingsResponse.settings);
 
 sectionDownload.addEventListener("click", async () => {
   sectionDownload.disabled = true;
