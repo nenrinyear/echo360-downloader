@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "minimum_chrome_version": "102",
   "name": "Echo360 Track Downloader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Detects Echo360 lecture media and downloads the authorized video and audio tracks.",
-  "permissions": ["downloads", "storage", "webRequest"],
+  "permissions": ["alarms", "downloads", "scripting", "storage", "webRequest"],
   "host_permissions": [
     "https://echo360.net.au/*",
     "https://content.echo360.net.au/*"
@@ -19,7 +19,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://echo360.net.au/lesson/*"],
+      "matches": [
+        "https://echo360.net.au/lesson/*",
+        "https://echo360.net.au/section/*"
+      ],
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }

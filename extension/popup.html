@@ -23,9 +23,20 @@
 
       <section id="content" class="hidden">
         <div class="notice">
-          一括保存するとCLIが自動認識できるフォルダに3トラックをまとめます。
+          一括保存するとCLIが自動認識できるフォルダに映像と音声をまとめます。
         </div>
         <div id="qualities"></div>
+      </section>
+
+      <section id="section-content" class="panel hidden">
+        <h2>section 一括ダウンロード</h2>
+        <p id="section-summary">授業一覧を確認しています…</p>
+        <button id="section-download" class="bundle-button" disabled>一覧を全てダウンロード</button>
+        <div id="batch-progress" class="hidden">
+          <div class="progress-track"><span id="progress-bar"></span></div>
+          <p id="progress-text"></p>
+          <button id="batch-cancel" class="secondary-button">中止</button>
+        </div>
       </section>
 
       <p id="status" role="status"></p>

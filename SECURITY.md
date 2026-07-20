@@ -13,6 +13,7 @@ Use [GitHub private vulnerability reporting](https://github.com/nenrinyear/echo3
 ## Security boundaries
 
 - The extension observes only requests initiated by `https://echo360.net.au` to the configured Echo360 content host.
+- Section batch processing follows only validated `https://echo360.net.au/lesson/` URLs discovered on an authorized section page and never reads cookies or authorization headers.
 - Authenticated media URLs are held in Chrome's in-memory extension session storage and are not written to `echo360.json`.
 - The CLI treats `echo360.json` as untrusted input, rejects path traversal and symlinks, and writes through temporary files before replacing an output.
 - This project does not bypass DRM or Echo360 authorization controls.

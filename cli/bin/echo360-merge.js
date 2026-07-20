@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import {
+  findBundles,
   findLatestBundle,
   outputPaths,
   readMetadata,
@@ -13,12 +14,14 @@ import {
 
 function usage() {
   console.log(`使い方:
-  echo360-merge [講義フォルダ] [--combined]
+  echo360-merge [講義フォルダまたは親フォルダ] [--combined]
 
-引数を省略すると ~/Downloads/Echo360 の最新講義を自動検出します。
+指定フォルダ以下を再帰的に検索し、見つかった全講義を処理します。
+引数を省略すると ~/Downloads/Echo360 以下を検索します。
 
 オプション:
   --root <path>   自動検索するルートを変更
+  --latest        最新の講義だけを処理
   --combined      2映像を左右に並べた動画も作成
   --force         既存の出力を上書き
   --help          このヘルプを表示`);
@@ -35,11 +38,12 @@ function runFfmpeg(args) {
 }
 
 function parseArgs(argv) {
-  const options = { combined: false, force: false, root: path.join(os.homedir(), "Downloads", "Echo360"), directory: null };
+  const options = { combined: false, force: false, latest: false, root: path.join(os.homedir(), "Downloads", "Echo360"), directory: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--combined") options.combined = true;
     else if (arg === "--force") options.force = true;
+    else if (arg === "--latest") options.latest = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "--root") {
       const value = argv[++index];
@@ -115,6 +119,24 @@ function combine(source1, source2, audio, output, force) {
   ]);
 }
 
+function mergeBundle(directory, options) {
+  const { data } = readMetadata(directory);
+  const tracks = validateBundle(directory, data);
+  const byRole = Object.fromEntries(tracks.map((track) => [track.role, track.path]));
+  const outputs = outputPaths(directory, data);
+
+  const displayTitle = String(data.title ?? "Echo360 lecture").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  console.log(`\n講義: ${displayTitle}`);
+  console.log(`フォルダ: ${directory}`);
+  if (byRole["source-1"]) mux(byRole["source-1"], byRole.audio, outputs.source1, options.force);
+  if (byRole["source-2"]) mux(byRole["source-2"], byRole.audio, outputs.source2, options.force);
+  if (options.combined && byRole["source-1"] && byRole["source-2"]) {
+    combine(byRole["source-1"], byRole["source-2"], byRole.audio, outputs.combined, options.force);
+  } else if (options.combined) {
+    console.log("\nスキップ: 左右合成にはSource 1とSource 2の両方が必要です。");
+  }
+}
+
 try {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
@@ -125,19 +147,22 @@ try {
     throw new Error("ffmpeg が見つかりません。macOSでは `brew install ffmpeg` で導入できます。");
   }
 
-  const directory = options.directory ?? findLatestBundle(options.root);
-  const { data } = readMetadata(directory);
-  const tracks = validateBundle(directory, data);
-  const byRole = Object.fromEntries(tracks.map((track) => [track.role, track.path]));
-  const outputs = outputPaths(directory, data);
-
-  const displayTitle = String(data.title ?? "Echo360 lecture").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
-  console.log(`講義: ${displayTitle}`);
-  console.log(`フォルダ: ${directory}`);
-  mux(byRole["source-1"], byRole.audio, outputs.source1, options.force);
-  mux(byRole["source-2"], byRole.audio, outputs.source2, options.force);
-  if (options.combined) combine(byRole["source-1"], byRole["source-2"], byRole.audio, outputs.combined, options.force);
-  console.log("\n完了しました。");
+  const root = options.directory ?? options.root;
+  const directories = options.latest ? [findLatestBundle(root)] : findBundles(root);
+  const failures = [];
+  console.log(`${directories.length}件の講義フォルダを検出しました。`);
+  for (const directory of directories) {
+    try {
+      mergeBundle(directory, options);
+    } catch (error) {
+      failures.push({ directory, message: error.message });
+      console.error(`\n失敗: ${directory}\n  ${error.message}`);
+    }
+  }
+  if (failures.length) {
+    throw new Error(`${directories.length}件中${failures.length}件の処理に失敗しました。`);
+  }
+  console.log(`\n完了しました (${directories.length}件)。`);
 } catch (error) {
   console.error(`エラー: ${error.message}`);
   process.exit(1);

@@ -5,6 +5,13 @@ const content = document.querySelector("#content");
 const qualities = document.querySelector("#qualities");
 const subtitle = document.querySelector("#subtitle");
 const status = document.querySelector("#status");
+const sectionContent = document.querySelector("#section-content");
+const sectionSummary = document.querySelector("#section-summary");
+const sectionDownload = document.querySelector("#section-download");
+const batchProgress = document.querySelector("#batch-progress");
+const batchCancel = document.querySelector("#batch-cancel");
+const progressBar = document.querySelector("#progress-bar");
+const progressText = document.querySelector("#progress-text");
 
 function trackName(track) {
   return track.trackType === "audio" ? "音声" : `Source ${track.source} 映像`;
@@ -27,7 +34,7 @@ async function download(tabId, trackKey, button) {
 
 async function downloadBundle(tabId, quality, button) {
   button.disabled = true;
-  status.textContent = "3トラックとメタデータを保存しています…";
+  status.textContent = "検出済みトラックとメタデータを保存しています…";
   const response = await chrome.runtime.sendMessage({
     type: "DOWNLOAD_BUNDLE",
     tabId,
@@ -39,7 +46,8 @@ async function downloadBundle(tabId, quality, button) {
     : `開始できませんでした: ${response.error}`;
 }
 
-function render(session) {
+function renderLesson(session) {
+  sectionContent.classList.add("hidden");
   const entries = Object.entries(session?.tracks ?? {});
   if (!entries.length) {
     empty.classList.remove("hidden");
@@ -65,16 +73,17 @@ function render(session) {
     card.innerHTML = `
       <div class="quality-head">
         <h2>${qualityLabel(quality)}</h2>
-        <span>3トラック合計 ${formatBytes(total)}</span>
+        <span>${tracks.length}トラック合計 ${formatBytes(total)}</span>
       </div>
     `;
 
     const sources = new Set(tracks.map(([, track]) => track.source));
+    const canBundle = sources.has(0) && (sources.has(1) || sources.has(2));
     const bundleButton = document.createElement("button");
     bundleButton.className = "bundle-button";
-    bundleButton.textContent = sources.size === 3 ? "3トラックを一括保存" : "3トラックの検出待ち";
-    bundleButton.disabled = sources.size !== 3;
-    if (sources.size === 3) {
+    bundleButton.textContent = canBundle ? `${tracks.length}トラックを一括保存` : "音声・映像の検出待ち";
+    bundleButton.disabled = !canBundle;
+    if (canBundle) {
       bundleButton.addEventListener("click", () => downloadBundle(session.tabId, quality, bundleButton));
     }
     card.append(bundleButton);
@@ -98,13 +107,78 @@ function render(session) {
   }
 }
 
+function renderSection(session) {
+  const count = session.lessons?.length ?? 0;
+  empty.classList.add("hidden");
+  content.classList.add("hidden");
+  sectionContent.classList.remove("hidden");
+  subtitle.textContent = session.title;
+  sectionSummary.textContent = count
+    ? `${count}件の授業を検出しました。各授業で利用可能な最高品質のトラックを順番に保存します。`
+    : "授業リンクを検出できません。ページの一覧が表示されるまで待ってください。";
+  sectionDownload.disabled = count === 0;
+}
+
+function render(session) {
+  if (session?.kind === "section") renderSection(session);
+  else renderLesson(session);
+}
+
+function renderBatch(batch) {
+  if (!batch) {
+    batchProgress.classList.add("hidden");
+    return;
+  }
+  const done = batch.completed + batch.failed;
+  const percent = batch.total ? Math.round((done / batch.total) * 100) : 0;
+  progressBar.style.width = `${percent}%`;
+  batchProgress.classList.toggle("hidden", batch.status !== "running" && done === 0);
+  batchCancel.classList.toggle("hidden", batch.status !== "running");
+  sectionDownload.disabled = batch.status === "running";
+  if (batch.status === "running") {
+    progressText.textContent = `${done}/${batch.total}件完了（失敗 ${batch.failed}件） ${batch.currentTitle || ""} ${batch.currentStage || ""}`;
+  } else if (batch.status === "completed") {
+    progressText.textContent = `${batch.total}件の処理が完了しました（成功 ${batch.completed}件、失敗 ${batch.failed}件）。`;
+  } else if (batch.status === "cancelled") {
+    progressText.textContent = `一括処理を中止しました（成功 ${batch.completed}件、失敗 ${batch.failed}件）。`;
+  }
+  if (batch.lastError) status.textContent = `直近のエラー: ${batch.lastError}`;
+}
+
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-if (!tab?.id || !tab.url?.startsWith("https://echo360.net.au/lesson/")) {
-  subtitle.textContent = "Echo360の授業タブで開いてください";
+
+sectionDownload.addEventListener("click", async () => {
+  sectionDownload.disabled = true;
+  status.textContent = "一括ダウンロードを開始しています…";
+  const response = await chrome.runtime.sendMessage({
+    type: "START_SECTION_BATCH",
+    tabId: tab.id
+  });
+  status.textContent = response.ok
+    ? "授業を順番に開いてダウンロードします。このsectionタブは開いたままにしてください。"
+    : `開始できませんでした: ${response.error}`;
+  if (response.batch) renderBatch(response.batch);
+  if (!response.ok) sectionDownload.disabled = false;
+});
+
+batchCancel.addEventListener("click", async () => {
+  batchCancel.disabled = true;
+  const response = await chrome.runtime.sendMessage({ type: "CANCEL_SECTION_BATCH" });
+  renderBatch(response.batch);
+  batchCancel.disabled = false;
+  status.textContent = "一括処理を中止しました。開始済みのダウンロードはChrome側で継続します。";
+});
+
+const supportedPage = tab?.url?.startsWith("https://echo360.net.au/lesson/")
+  || tab?.url?.startsWith("https://echo360.net.au/section/");
+if (!tab?.id || !supportedPage) {
+  subtitle.textContent = "Echo360の授業またはsectionタブで開いてください";
   empty.classList.remove("hidden");
 } else {
   const response = await chrome.runtime.sendMessage({ type: "GET_SESSION", tabId: tab.id });
   render(response.session);
+  const batchResponse = await chrome.runtime.sendMessage({ type: "GET_BATCH_STATUS" });
+  renderBatch(batchResponse.batch);
 }
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -112,4 +186,5 @@ chrome.runtime.onMessage.addListener((message) => {
     chrome.runtime.sendMessage({ type: "GET_SESSION", tabId: tab.id })
       .then((response) => render(response.session));
   }
+  if (message?.type === "BATCH_UPDATED") renderBatch(message.batch);
 });

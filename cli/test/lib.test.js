@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findLatestBundle, outputPaths, readMetadata, validateBundle } from "../lib.js";
+import { findBundles, findLatestBundle, outputPaths, readMetadata, validateBundle } from "../lib.js";
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo360-cli-"));
@@ -27,11 +27,52 @@ test("finds and validates a downloaded bundle", () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test("finds bundles recursively in a stable order", () => {
+  const first = fixture();
+  const nested = path.join(first.root, "course", "week-02");
+  fs.mkdirSync(nested, { recursive: true });
+  const second = fixture();
+  fs.renameSync(second.directory, path.join(nested, "lecture"));
+  fs.rmSync(second.root, { recursive: true, force: true });
+
+  assert.deepEqual(findBundles(first.root), [
+    path.join(first.root, "course", "week-02", "lecture"),
+    first.directory
+  ]);
+  fs.rmSync(first.root, { recursive: true, force: true });
+});
+
+test("does not follow symlinked directories while scanning recursively", () => {
+  const { root, directory } = fixture();
+  const outside = fixture();
+  fs.symlinkSync(outside.root, path.join(root, "linked"));
+
+  assert.deepEqual(findBundles(root), [directory]);
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(outside.root, { recursive: true, force: true });
+});
+
 test("rejects an incomplete track", () => {
   const { root, directory } = fixture();
   fs.writeFileSync(path.join(directory, "audio-q1.mp4"), "a");
   const { data } = readMetadata(directory);
   assert.throws(() => validateBundle(directory, data), /未完了/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("accepts a bundle with one video source and audio", () => {
+  const { root, directory } = fixture();
+  const metadataPath = path.join(directory, "echo360.json");
+  const data = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+  data.tracks = data.tracks.filter((track) => track.role !== "source-2");
+  fs.writeFileSync(metadataPath, JSON.stringify(data));
+  fs.rmSync(path.join(directory, "source-2-q1.mp4"));
+
+  const { data: metadata } = readMetadata(directory);
+  assert.deepEqual(
+    validateBundle(directory, metadata).map((track) => track.role),
+    ["source-1", "audio"]
+  );
   fs.rmSync(root, { recursive: true, force: true });
 });
 

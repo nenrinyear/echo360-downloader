@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const MAX_METADATA_BYTES = 64 * 1024;
-const REQUIRED_ROLES = ["source-1", "source-2", "audio"];
+const ALLOWED_ROLES = ["source-1", "source-2", "audio"];
 
 export function assertPlainFilename(value, label = "ファイル名") {
   if (
@@ -41,13 +41,21 @@ export function readMetadata(directory) {
     typeof data !== "object" ||
     data.schemaVersion !== 1 ||
     !Array.isArray(data.tracks) ||
-    data.tracks.length !== REQUIRED_ROLES.length
+    data.tracks.length < 2 ||
+    data.tracks.length > ALLOWED_ROLES.length
   ) {
     throw new Error(`未対応のメタデータです: ${metadataPath}`);
   }
 
   const roles = data.tracks.map((track) => track?.role);
-  if (new Set(roles).size !== REQUIRED_ROLES.length || REQUIRED_ROLES.some((role) => !roles.includes(role))) {
+  const hasAudio = roles.includes("audio");
+  const hasVideo = roles.includes("source-1") || roles.includes("source-2");
+  if (
+    new Set(roles).size !== roles.length ||
+    roles.some((role) => !ALLOWED_ROLES.includes(role)) ||
+    !hasAudio ||
+    !hasVideo
+  ) {
     throw new Error("メタデータのトラック構成が不正です。");
   }
   for (const track of data.tracks) {
@@ -70,7 +78,7 @@ export function findTrack(data, role) {
 
 export function validateBundle(directory, data) {
   const baseDirectory = path.resolve(directory);
-  return REQUIRED_ROLES.map((role) => {
+  return ALLOWED_ROLES.filter((role) => data.tracks.some((track) => track.role === role)).map((role) => {
     const track = findTrack(data, role);
     const filename = assertPlainFilename(track.filename, `${role}のファイル名`);
     const filePath = path.resolve(baseDirectory, filename);
@@ -84,11 +92,7 @@ export function validateBundle(directory, data) {
 }
 
 export function findLatestBundle(root) {
-  if (!fs.existsSync(root)) throw new Error(`ダウンロード先がありません: ${root}`);
-  const candidates = fs.readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(root, entry.name))
-    .filter((directory) => fs.existsSync(path.join(directory, "echo360.json")))
+  const candidates = findBundles(root)
     .map((directory) => ({
       directory,
       mtime: fs.statSync(path.join(directory, "echo360.json")).mtimeMs
@@ -96,6 +100,39 @@ export function findLatestBundle(root) {
     .sort((a, b) => b.mtime - a.mtime);
   if (!candidates.length) throw new Error(`${root} に echo360.json が見つかりません。`);
   return candidates[0].directory;
+}
+
+export function findBundles(root) {
+  const resolvedRoot = path.resolve(root);
+  if (!fs.existsSync(resolvedRoot)) {
+    throw new Error(`ダウンロード先がありません: ${resolvedRoot}`);
+  }
+  const rootStat = fs.lstatSync(resolvedRoot);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    throw new Error(`ダウンロード先は通常のフォルダである必要があります: ${resolvedRoot}`);
+  }
+
+  const candidates = [];
+  const pending = [resolvedRoot];
+  while (pending.length) {
+    const directory = pending.pop();
+    const metadataPath = path.join(directory, "echo360.json");
+    if (fs.existsSync(metadataPath)) {
+      candidates.push(directory);
+      continue;
+    }
+
+    const children = fs.readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+      .map((entry) => path.join(directory, entry.name))
+      .sort((a, b) => b.localeCompare(a, "ja"));
+    pending.push(...children);
+  }
+
+  if (!candidates.length) {
+    throw new Error(`${resolvedRoot} 以下に echo360.json が見つかりません。`);
+  }
+  return candidates.sort((a, b) => a.localeCompare(b, "ja"));
 }
 
 export function outputPaths(directory, data) {

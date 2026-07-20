@@ -1,5 +1,63 @@
 const MEDIA_FILE_RE = /^s([012])q(\d+)\.mp4$/i;
 const MASTER_PLAYLIST_RE = /^s([12])_(v|av)\.m3u8$/i;
+const LESSON_PATH_RE = /^\/lesson\/[^/]+(?:\/|$)/;
+const SECTION_PATH_RE = /^\/section\/[^/]+(?:\/home)?\/?$/;
+
+export function parseEchoPageUrl(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (url.origin !== "https://echo360.net.au") return null;
+  const kind = LESSON_PATH_RE.test(url.pathname)
+    ? "lesson"
+    : SECTION_PATH_RE.test(url.pathname) ? "section" : null;
+  if (!kind) return null;
+  url.hash = "";
+  return { kind, url: url.href };
+}
+
+export function normalizeLessonEntries(entries, sectionUrl) {
+  const section = parseEchoPageUrl(sectionUrl);
+  if (section?.kind !== "section" || !Array.isArray(entries)) return [];
+  const unique = new Map();
+  for (const entry of entries.slice(0, 2000)) {
+    let absolute;
+    try {
+      absolute = new URL(entry?.url, section.url);
+    } catch {
+      continue;
+    }
+    const parsed = parseEchoPageUrl(absolute.href);
+    if (parsed?.kind !== "lesson" || unique.has(parsed.url)) continue;
+    unique.set(parsed.url, {
+      url: parsed.url,
+      title: sanitizeFilename(String(entry?.title ?? "Echo360 lecture").slice(0, 500))
+    });
+  }
+  return [...unique.values()];
+}
+
+export function findDownloadableQualities(tracks, requireBothVideos = false) {
+  const values = Object.values(tracks ?? {});
+  const qualities = new Set(
+    values
+      .filter((track) => Number.isSafeInteger(track?.quality))
+      .map((track) => track.quality)
+  );
+  return [...qualities]
+    .filter((quality) => {
+      const validTrack = (source) => {
+        const track = tracks?.[`${source}:${quality}`];
+        return track && Number.isSafeInteger(track.size) && track.size > 0;
+      };
+      const videoCount = [1, 2].filter(validTrack).length;
+      return validTrack(0) && (requireBothVideos ? videoCount === 2 : videoCount >= 1);
+    })
+    .sort((a, b) => b - a);
+}
 
 export function parseMediaUrl(rawUrl) {
   let url;

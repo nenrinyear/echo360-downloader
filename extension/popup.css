@@ -105,6 +105,35 @@ button:disabled { cursor: wait; opacity: .55; }
   background: #4c1d95;
 }
 
+#section-content .bundle-button { margin-top: 12px; }
+
+.progress-track {
+  height: 7px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5dff0;
+}
+
+#progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #6d28d9;
+  transition: width .2s ease;
+}
+
+#progress-text { margin-top: 7px; }
+
+.secondary-button {
+  margin-top: 9px;
+  color: #5b417d;
+  background: #eee7fa;
+}
+
+.secondary-button:hover { background: #e5d9f6; }
+
 #status {
   min-height: 16px;
   margin-top: 10px;
