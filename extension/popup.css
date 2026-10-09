@@ -52,17 +52,6 @@ header p { margin-top: 2px; color: #71697e; font-size: 12px; }
 
 .settings-panel { margin-top: 10px; }
 
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.toggle-row input { accent-color: #6d28d9; }
-
 .settings-fields { margin-top: 10px; }
 
 .settings-fields label {

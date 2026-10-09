@@ -12,17 +12,43 @@ const batchProgress = document.querySelector("#batch-progress");
 const batchCancel = document.querySelector("#batch-cancel");
 const progressBar = document.querySelector("#progress-bar");
 const progressText = document.querySelector("#progress-text");
-const customFolderEnabled = document.querySelector("#custom-folder-enabled");
-const customFolderFields = document.querySelector("#custom-folder-fields");
 const customFolder = document.querySelector("#custom-folder");
 const saveDownloadSettings = document.querySelector("#save-download-settings");
 const effectiveFolder = document.querySelector("#effective-folder");
 
 function renderDownloadSettings(settings) {
-  customFolderEnabled.checked = settings.useCustomFolder;
-  customFolder.value = settings.customFolder;
-  customFolderFields.classList.toggle("hidden", !settings.useCustomFolder);
+  customFolder.value = settings.effectiveFolder;
   effectiveFolder.textContent = `保存先: Downloads/${settings.effectiveFolder}`;
+}
+
+async function saveFolder(folder) {
+  const response = await chrome.runtime.sendMessage({
+    type: "SET_DOWNLOAD_SETTINGS",
+    settings: { useCustomFolder: true, customFolder: folder }
+  });
+  if (!response.ok) {
+    status.textContent = `保存先を変更できませんでした: ${response.error}`;
+    return null;
+  }
+  renderDownloadSettings(response.settings);
+  return response.settings;
+}
+
+async function confirmDownloadFolder() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_SETTINGS" });
+  if (!response.ok) {
+    status.textContent = `保存先を取得できませんでした: ${response.error}`;
+    return null;
+  }
+  const folder = window.prompt(
+    "今回の保存先を入力してください（Downloadsからの相対パス）",
+    response.settings.effectiveFolder
+  );
+  if (folder === null) {
+    status.textContent = "ダウンロードをキャンセルしました。";
+    return null;
+  }
+  return saveFolder(folder);
 }
 
 function trackName(track) {
@@ -31,6 +57,11 @@ function trackName(track) {
 
 async function download(tabId, trackKey, button) {
   button.disabled = true;
+  const settings = await confirmDownloadFolder();
+  if (!settings) {
+    button.disabled = false;
+    return;
+  }
   status.textContent = "ダウンロードを開始しています…";
   const response = await chrome.runtime.sendMessage({
     type: "DOWNLOAD_TRACK",
@@ -46,6 +77,11 @@ async function download(tabId, trackKey, button) {
 
 async function downloadBundle(tabId, quality, button) {
   button.disabled = true;
+  const settings = await confirmDownloadFolder();
+  if (!settings) {
+    button.disabled = false;
+    return;
+  }
   status.textContent = "検出済みトラックとメタデータを保存しています…";
   const response = await chrome.runtime.sendMessage({
     type: "DOWNLOAD_BUNDLE",
@@ -159,27 +195,11 @@ function renderBatch(batch) {
 
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-customFolderEnabled.addEventListener("change", () => {
-  customFolderFields.classList.toggle("hidden", !customFolderEnabled.checked);
-  if (customFolderEnabled.checked) customFolder.focus();
-});
-
 saveDownloadSettings.addEventListener("click", async () => {
   saveDownloadSettings.disabled = true;
-  const response = await chrome.runtime.sendMessage({
-    type: "SET_DOWNLOAD_SETTINGS",
-    settings: {
-      useCustomFolder: customFolderEnabled.checked,
-      customFolder: customFolder.value
-    }
-  });
+  const settings = await saveFolder(customFolder.value);
   saveDownloadSettings.disabled = false;
-  if (response.ok) {
-    renderDownloadSettings(response.settings);
-    status.textContent = `保存先を Downloads/${response.settings.effectiveFolder} に設定しました。`;
-  } else {
-    status.textContent = `保存先を変更できませんでした: ${response.error}`;
-  }
+  if (settings) status.textContent = `デフォルト保存先を Downloads/${settings.effectiveFolder} に設定しました。`;
 });
 
 const settingsResponse = await chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_SETTINGS" });
@@ -187,6 +207,11 @@ if (settingsResponse.ok) renderDownloadSettings(settingsResponse.settings);
 
 sectionDownload.addEventListener("click", async () => {
   sectionDownload.disabled = true;
+  const settings = await confirmDownloadFolder();
+  if (!settings) {
+    sectionDownload.disabled = false;
+    return;
+  }
   status.textContent = "一括ダウンロードを開始しています…";
   const response = await chrome.runtime.sendMessage({
     type: "START_SECTION_BATCH",

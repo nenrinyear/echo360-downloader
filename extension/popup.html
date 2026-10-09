@@ -40,17 +40,14 @@
       </section>
 
       <section id="download-settings" class="panel settings-panel">
-        <h2>保存先</h2>
-        <label class="toggle-row" for="custom-folder-enabled">
-          <input id="custom-folder-enabled" type="checkbox">
-          <span>カスタム保存先を使う</span>
-        </label>
-        <div id="custom-folder-fields" class="settings-fields hidden">
+        <h2>デフォルト保存先</h2>
+        <div class="settings-fields">
           <label for="custom-folder">Downloadsからの相対パス</label>
           <input id="custom-folder" type="text" maxlength="240" placeholder="授業/Echo360" spellcheck="false">
         </div>
         <button id="save-download-settings" class="secondary-button settings-save">設定を保存</button>
         <p id="effective-folder">保存先: Downloads/Echo360</p>
+        <p>ダウンロード開始前に、今回の保存先を確認できます。</p>
       </section>
 
       <p id="status" role="status"></p>
