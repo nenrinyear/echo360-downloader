@@ -14,10 +14,9 @@ import {
   validateCompletedOutputs
 } from "../lib.js";
 
-function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo360-cli-"));
+function fixture(root = fs.mkdtempSync(path.join(os.tmpdir(), "echo360-cli-"))) {
   const directory = path.join(root, "lecture");
-  fs.mkdirSync(directory);
+  fs.mkdirSync(directory, { recursive: true });
   const tracks = [
     { role: "source-1", filename: "source-1-q1.mp4", size: 3 },
     { role: "source-2", filename: "source-2-q1.mp4", size: 3 },
@@ -32,6 +31,19 @@ function completedMp4() {
   return Buffer.from("000000186674797069736f6d00000000", "hex");
 }
 
+function createLink(context, create, label) {
+  try {
+    create();
+    return true;
+  } catch (error) {
+    if (process.platform !== "win32" || !["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
+      throw error;
+    }
+    context.skip(`Windows does not permit creating this ${label}: ${error.code}`);
+    return false;
+  }
+}
+
 test("finds and validates a downloaded bundle", () => {
   const { root, directory } = fixture();
   assert.equal(findLatestBundle(root), directory);
@@ -43,26 +55,23 @@ test("finds and validates a downloaded bundle", () => {
 test("finds bundles recursively in a stable order", () => {
   const first = fixture();
   const nested = path.join(first.root, "course", "week-02");
-  fs.mkdirSync(nested, { recursive: true });
-  const second = fixture();
-  fs.renameSync(second.directory, path.join(nested, "lecture"));
-  fs.rmSync(second.root, { recursive: true, force: true });
+  const second = fixture(nested);
 
-  assert.deepEqual(findBundles(first.root), [
-    path.join(first.root, "course", "week-02", "lecture"),
-    first.directory
-  ]);
+  assert.deepEqual(findBundles(first.root), [second.directory, first.directory]);
   fs.rmSync(first.root, { recursive: true, force: true });
 });
 
-test("does not follow symlinked directories while scanning recursively", () => {
+test("does not follow symlinked directories while scanning recursively", (context) => {
   const { root, directory } = fixture();
   const outside = fixture();
-  fs.symlinkSync(outside.root, path.join(root, "linked"));
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside.root, { recursive: true, force: true });
+  });
+  const type = process.platform === "win32" ? "junction" : "dir";
+  if (!createLink(context, () => fs.symlinkSync(outside.root, path.join(root, "linked"), type), type)) return;
 
   assert.deepEqual(findBundles(root), [directory]);
-  fs.rmSync(root, { recursive: true, force: true });
-  fs.rmSync(outside.root, { recursive: true, force: true });
 });
 
 test("rejects an incomplete track", () => {
@@ -107,14 +116,15 @@ test("rejects output path traversal", () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test("rejects symlinked input tracks", () => {
+test("rejects symlinked input tracks", (context) => {
   const { root, directory } = fixture();
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const audio = path.join(directory, "audio-q1.mp4");
   fs.rmSync(audio);
-  fs.symlinkSync(path.join(directory, "source-1-q1.mp4"), audio);
+  const source = path.join(directory, "source-1-q1.mp4");
+  if (!createLink(context, () => fs.symlinkSync(source, audio, "file"), "file symlink")) return;
   const { data } = readMetadata(directory);
   assert.throws(() => validateBundle(directory, data), /通常ファイルではありません/);
-  fs.rmSync(root, { recursive: true, force: true });
 });
 
 test("deletes source tracks only after every required output exists", () => {
@@ -154,19 +164,20 @@ test("refuses to treat an original track as a completed output", () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test("refuses to treat a hard link to an original track as output", () => {
+test("refuses to treat a hard link to an original track as output", (context) => {
   const { root, directory } = fixture();
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { data } = readMetadata(directory);
   const outputs = outputPaths(directory, data);
   fs.rmSync(path.join(directory, "source-1-q1.mp4"));
   fs.writeFileSync(path.join(directory, "source-1-q1.mp4"), completedMp4());
   data.tracks.find((track) => track.role === "source-1").size = completedMp4().length;
-  fs.linkSync(path.join(directory, "source-1-q1.mp4"), outputs.source1);
+  const source = path.join(directory, "source-1-q1.mp4");
+  if (!createLink(context, () => fs.linkSync(source, outputs.source1), "hard link")) return;
   fs.writeFileSync(outputs.source2, completedMp4());
 
   assert.throws(() => cleanupSourceTracks(directory, data), /出力先が元トラックと同じ実体/);
   assert.equal(fs.existsSync(path.join(directory, "source-1-q1.mp4")), true);
-  fs.rmSync(root, { recursive: true, force: true });
 });
 
 test("does not delete sources when an output is not a valid MP4", () => {

@@ -36,7 +36,9 @@ section の授業一覧をまとめて保存する場合は、section の `/home
 
 ## 2. CLI
 
-FFmpeg をインストールします。
+Node.js 18 以上と FFmpeg が必要です。Windows では `ffmpeg.exe` を含むフォルダを PATH に追加し、新しい PowerShell で `node --version` と `ffmpeg -version` を実行して確認します。
+
+macOS で Homebrew を使う場合は次のコマンドで FFmpeg をインストールできます。
 
 ```sh
 brew install ffmpeg
@@ -52,6 +54,12 @@ npm link
 
 ```sh
 npm run merge
+```
+
+Windows の PowerShell で保存先を指定する場合は、リポジトリのルートで次のように実行します。
+
+```powershell
+node .\cli\bin\echo360-merge.js "$env:USERPROFILE\Downloads\Echo360"
 ```
 
 `npm link` 済みなら次だけで動きます。

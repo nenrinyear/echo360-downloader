@@ -190,7 +190,7 @@ try {
     process.exit(0);
   }
   if (!options.cleanup && !commandExists("ffmpeg")) {
-    throw new Error("ffmpeg が見つかりません。macOSでは `brew install ffmpeg` で導入できます。");
+    throw new Error("ffmpeg が見つかりません。FFmpeg をインストールし、実行ファイルのフォルダを PATH に追加してください。");
   }
 
   const root = options.directory ?? options.root;

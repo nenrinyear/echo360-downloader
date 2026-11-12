@@ -9,37 +9,35 @@ import { fileURLToPath } from "node:url";
 const cliPath = fileURLToPath(new URL("../bin/echo360-merge.js", import.meta.url));
 
 test("merges a bundle and deletes its source tracks", (context) => {
+  const ffmpeg = spawnSync("ffmpeg", ["-version"], { encoding: "utf8" });
+  if (ffmpeg.error?.code === "ENOENT") {
+    context.skip("FFmpeg is not on PATH");
+    return;
+  }
+  assert.ifError(ffmpeg.error);
+  assert.equal(ffmpeg.status, 0, ffmpeg.stderr);
+
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo360-merge-test-"));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const bundle = path.join(root, "lecture");
-  const bin = path.join(root, "bin");
+  const bundle = path.join(root, "講義 01");
   fs.mkdirSync(bundle);
-  fs.mkdirSync(bin);
 
   const tracks = [
-    { role: "source-1", filename: "source-1-q1.mp4", size: 3 },
-    { role: "audio", filename: "audio-q1.mp4", size: 3 }
-  ];
+    { role: "source-1", filename: "source-1-q1.mp4", input: "color=s=64x64:r=10", codec: ["-c:v", "mpeg4"] },
+    { role: "audio", filename: "audio-q1.mp4", input: "sine=frequency=440", codec: ["-c:a", "aac"] }
+  ].map(({ role, filename, input, codec }) => {
+    const trackPath = path.join(bundle, filename);
+    const result = spawnSync("ffmpeg", [
+      "-v", "error", "-f", "lavfi", "-i", input, "-t", "0.5", ...codec, trackPath
+    ], { encoding: "utf8" });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    return { role, filename, size: fs.statSync(trackPath).size };
+  });
   fs.writeFileSync(path.join(bundle, "echo360.json"), JSON.stringify({ schemaVersion: 1, tracks }));
-  for (const track of tracks) fs.writeFileSync(path.join(bundle, track.filename), "abc");
-
-  const fakeFfmpegScript = path.join(bin, "ffmpeg.js");
-  fs.writeFileSync(fakeFfmpegScript, [
-    "const fs = require('node:fs');",
-    "const args = process.argv.slice(2);",
-    "if (args[0] !== '-version') fs.writeFileSync(args.at(-1), Buffer.from('000000186674797069736f6d00000000', 'hex'));"
-  ].join("\n"));
-  if (process.platform === "win32") {
-    fs.writeFileSync(path.join(bin, "ffmpeg.cmd"), `@node "%~dp0\\ffmpeg.js" %*\r\n`);
-  } else {
-    const executable = path.join(bin, "ffmpeg");
-    fs.writeFileSync(executable, `#!/usr/bin/env node\n${fs.readFileSync(fakeFfmpegScript, "utf8")}\n`);
-    fs.chmodSync(executable, 0o755);
-  }
 
   const result = spawnSync(process.execPath, [cliPath, bundle, "--combined", "--delete-sources"], {
-    encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` }
+    encoding: "utf8"
   });
 
   assert.equal(result.status, 0, result.stderr);

@@ -16,7 +16,7 @@
     "echo360-merge": "cli/bin/echo360-merge.js"
   },
   "scripts": {
-    "test": "node --test extension/test/*.test.js cli/test/*.test.js",
+    "test": "node --test",
     "merge": "node cli/bin/echo360-merge.js"
   }
 }
