@@ -75,16 +75,25 @@ function collectSectionLessons() {
   return entries;
 }
 
+async function sendRuntimeMessage(message) {
+  try {
+    await chrome.runtime.sendMessage(message);
+  } catch {
+    // Reloading the extension can invalidate scripts still running in open tabs.
+    // sendMessage may throw synchronously as well as reject its promise.
+  }
+}
+
 function sendPageInfo(lessons = null) {
   const kind = pageKind();
   if (!kind || window !== window.top) return;
-  return chrome.runtime.sendMessage({
+  return sendRuntimeMessage({
     type: "PAGE_INFO",
     kind,
     title: document.title,
     pageUrl: location.href,
     lessons: kind === "section" ? lessons ?? collectSectionLessons() : undefined
-  }).catch(() => {});
+  });
 }
 
 function delay(milliseconds) {
@@ -137,7 +146,7 @@ async function collectAllSectionLessons() {
 sendPageInfo();
 
 addEventListener("pagehide", () => {
-  chrome.runtime.sendMessage({ type: "PAGE_UNLOAD" }).catch(() => {});
+  void sendRuntimeMessage({ type: "PAGE_UNLOAD" });
 }, { once: true });
 
 const titleElement = document.querySelector("title");
