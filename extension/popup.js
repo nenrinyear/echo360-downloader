@@ -15,10 +15,16 @@ const progressText = document.querySelector("#progress-text");
 const customFolder = document.querySelector("#custom-folder");
 const saveDownloadSettings = document.querySelector("#save-download-settings");
 const effectiveFolder = document.querySelector("#effective-folder");
+const folderDialog = document.querySelector("#folder-dialog");
+const folderForm = document.querySelector("#folder-form");
+const confirmedFolder = document.querySelector("#confirmed-folder");
+const folderError = document.querySelector("#folder-error");
+const folderStart = document.querySelector("#folder-start");
+const folderCancel = document.querySelector("#folder-cancel");
 
 function renderDownloadSettings(settings) {
   customFolder.value = settings.effectiveFolder;
-  effectiveFolder.textContent = `保存先: Downloads/${settings.effectiveFolder}`;
+  effectiveFolder.textContent = `Chromeの保存先 / ${settings.effectiveFolder}`;
 }
 
 async function saveFolder(folder) {
@@ -40,15 +46,45 @@ async function confirmDownloadFolder() {
     status.textContent = `保存先を取得できませんでした: ${response.error}`;
     return null;
   }
-  const folder = window.prompt(
-    "今回の保存先を入力してください（Downloadsからの相対パス）",
-    response.settings.effectiveFolder
-  );
-  if (folder === null) {
-    status.textContent = "ダウンロードをキャンセルしました。";
-    return null;
-  }
-  return saveFolder(folder);
+  confirmedFolder.value = customFolder.value || response.settings.effectiveFolder;
+  folderError.textContent = "";
+  folderStart.disabled = false;
+  return new Promise((resolve) => {
+    const finish = (settings) => {
+      folderForm.removeEventListener("submit", submit);
+      folderDialog.removeEventListener("cancel", cancel);
+      folderCancel.removeEventListener("click", cancel);
+      folderDialog.close();
+      resolve(settings);
+    };
+    const cancel = (event) => {
+      event.preventDefault();
+      if (folderCancel.disabled) return;
+      status.textContent = "ダウンロードをキャンセルしました。";
+      finish(null);
+    };
+    const submit = async (event) => {
+      event.preventDefault();
+      folderStart.disabled = true;
+      folderCancel.disabled = true;
+      try {
+        const settings = await saveFolder(confirmedFolder.value);
+        if (settings) finish(settings);
+        else folderError.textContent = status.textContent;
+      } catch (error) {
+        folderError.textContent = `保存先を設定できませんでした: ${error.message}`;
+      } finally {
+        folderStart.disabled = false;
+        folderCancel.disabled = false;
+      }
+    };
+    folderForm.addEventListener("submit", submit);
+    folderDialog.addEventListener("cancel", cancel);
+    folderCancel.addEventListener("click", cancel);
+    folderDialog.showModal();
+    confirmedFolder.focus();
+    confirmedFolder.select();
+  });
 }
 
 function trackName(track) {
@@ -199,7 +235,7 @@ saveDownloadSettings.addEventListener("click", async () => {
   saveDownloadSettings.disabled = true;
   const settings = await saveFolder(customFolder.value);
   saveDownloadSettings.disabled = false;
-  if (settings) status.textContent = `デフォルト保存先を Downloads/${settings.effectiveFolder} に設定しました。`;
+  if (settings) status.textContent = `デフォルト保存先を Chromeの保存先 / ${settings.effectiveFolder} に設定しました。`;
 });
 
 const settingsResponse = await chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_SETTINGS" });

@@ -136,7 +136,7 @@ export function normalizeDownloadFolder(value) {
   if (!normalized) throw new Error("保存先フォルダを入力してください。");
   if (normalized.length > 240) throw new Error("保存先フォルダが長すぎます。");
   if (normalized.startsWith("/") || /^[a-z]:\//i.test(normalized)) {
-    throw new Error("Downloadsからの相対パスを指定してください。");
+    throw new Error("Chromeのダウンロード先からの相対パスを指定してください。");
   }
 
   const segments = normalized.split("/");

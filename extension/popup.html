@@ -42,15 +42,31 @@
       <section id="download-settings" class="panel settings-panel">
         <h2>デフォルト保存先</h2>
         <div class="settings-fields">
-          <label for="custom-folder">Downloadsからの相対パス</label>
+          <label for="custom-folder">Chromeのダウンロード先からの相対パス</label>
           <input id="custom-folder" type="text" maxlength="240" placeholder="授業/Echo360" spellcheck="false">
         </div>
         <button id="save-download-settings" class="secondary-button settings-save">設定を保存</button>
-        <p id="effective-folder">保存先: Downloads/Echo360</p>
+        <p id="effective-folder">Chromeの保存先 / Echo360</p>
         <p>ダウンロード開始前に、今回の保存先を確認できます。</p>
+        <p>基準フォルダはChromeの設定 → ダウンロード → 保存先で変更できます。</p>
       </section>
 
       <p id="status" role="status"></p>
+      <dialog id="folder-dialog" aria-labelledby="folder-dialog-title">
+        <form id="folder-form">
+          <h2 id="folder-dialog-title">今回の保存先</h2>
+          <div class="settings-fields">
+            <label for="confirmed-folder">Chromeのダウンロード先からの相対パス</label>
+            <input id="confirmed-folder" type="text" required maxlength="240" spellcheck="false">
+          </div>
+          <p>変更したパスを次回の初期値として保存します。</p>
+          <p id="folder-error" role="alert"></p>
+          <div class="dialog-actions">
+            <button id="folder-cancel" type="button" class="secondary-button">キャンセル</button>
+            <button id="folder-start" type="submit">この保存先で開始</button>
+          </div>
+        </form>
+      </dialog>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

@@ -172,3 +172,17 @@ button:disabled { cursor: wait; opacity: .55; }
 }
 
 .hidden { display: none; }
+
+dialog {
+  width: calc(100% - 28px);
+  padding: 18px;
+  border: 1px solid #e5dff0;
+  border-radius: 14px;
+  color: #17131f;
+  background: #fbfaff;
+}
+
+dialog::backdrop { background: rgb(23 19 31 / 45%); }
+dialog p { margin-top: 10px; font-size: 12px; line-height: 1.6; }
+#folder-error { color: #b42318; }
+.dialog-actions { display: flex; justify-content: flex-end; align-items: baseline; gap: 8px; margin-top: 14px; }
